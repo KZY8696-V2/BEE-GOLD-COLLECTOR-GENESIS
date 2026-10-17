@@ -1,4 +1,4 @@
-name: Build Sega Genesis ROM (SGDK v2.1.1)
+name: Build Sega Genesis ROM (SGDK v2.11)
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build via SGDK v2.1.1 & Makefile Setup
+    name: Build via SGDK v2.11 & Makefile Setup
     runs-on: windows-latest
 
     steps:
@@ -20,7 +20,6 @@ jobs:
         run: |
           Write-Host "=== 1. Makefile ve C Kaynak Dosyası Ayarlanıyor ==="
           
-          # src/BGCGENESISMAIN.c var mı kontrol et
           if (!(Test-Path "src/BGCGENESISMAIN.c")) {
               Write-Error "Hata: src/BGCGENESISMAIN.c dosyası bulunamadı! Lütfen repoda bu yolda olduğundan emin olun."
               exit 1
@@ -28,16 +27,15 @@ jobs:
               Write-Host "Kaynak dosya doğrulandı: src/BGCGENESISMAIN.c"
           }
 
-          # Kök dizine SGDK v2.1.1 uyumlu Makefile'ı otomatik yazdırıyoruz
           $makeContent = "SRC_C = src/BGCGENESISMAIN.c`n`ninclude C:/sgdk/Makefile.gen"
           Set-Content -Path "Makefile" -Value $makeContent
           Write-Host "Makefile başarıyla oluşturuldu."
 
-      - name: Clone SGDK v2.1.1 & Setup Environment
+      - name: Clone SGDK v2.11 & Setup Environment
         shell: pwsh
         run: |
-          Write-Host "=== 2. SGDK v2.1.1 Resmi Deposundan İndiriliyor ==="
-          git clone --branch v2.1.1 --depth 1 https://github.com/Stephane-D/SGDK.git C:\sgdk
+          Write-Host "=== 2. SGDK v2.11 Resmi Deposundan İndiriliyor ==="
+          git clone --branch v2.11 --depth 1 https://github.com/Stephane-D/SGDK.git C:\sgdk
 
           [Environment]::SetEnvironmentVariable("GDK", "C:\sgdk", "Process")
           [Environment]::SetEnvironmentVariable("GDK", "C:\sgdk", "Machine")
@@ -48,7 +46,7 @@ jobs:
       - name: Build ROM using SGDK Bin Executables
         shell: cmd
         run: |
-          echo "=== 3. SGDK v2.1.1 Bin Klasöründen Derleme Başlatılıyor ==="
+          echo "=== 3. SGDK v2.11 Bin Klasöründen Derleme Başlatılıyor ==="
           set GDK=C:\sgdk
           set PATH=C:\sgdk\bin;%PATH%
 
