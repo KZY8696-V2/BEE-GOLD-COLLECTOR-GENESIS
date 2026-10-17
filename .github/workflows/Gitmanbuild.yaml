@@ -30,8 +30,8 @@ jobs:
               Write-Host "Dosya src\BGCGENESISMAIN.c olarak kopyalandı."
           }
 
-          # GDK değişkenini doğru okuyabilmek için $env:GDK kullanıyoruz
-          $makeContent = "SRC_C = src/BGCGENESISMAIN.c`n`ninclude `$env:GDK/Makefile.gen"
+          # Sabit ve garantili C:/sgdk yolunu Makefile içine yazıyoruz
+          $makeContent = "SRC_C = src/BGCGENESISMAIN.c`n`ninclude C:/sgdk/Makefile.gen"
           Set-Content -Path "Makefile" -Value $makeContent
           Write-Host "Özel Makefile oluşturuldu!"
 
