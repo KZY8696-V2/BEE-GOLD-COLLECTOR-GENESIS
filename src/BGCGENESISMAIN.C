@@ -71,17 +71,17 @@ const u32 tile_flower[8] = {
     0x37666730, 0x03777300, 0x00222000, 0x00222000
 };
 
-// --- INITIALIZE COLOR PALETTES ---
+// --- INITIALIZE COLOR PALETTES (SGDK RGB Macro 0-7) ---
 void init_palettes() {
-    PAL_setColor(0, RGB32(10, 10, 30));     
-    PAL_setColor(1, RGB32(255, 220, 0));   
-    PAL_setColor(2, RGB32(20, 20, 20));    
-    PAL_setColor(3, RGB32(240, 240, 240)); 
+    PAL_setColor(0, RGB(1, 1, 4));     // Dark Sky
+    PAL_setColor(1, RGB(7, 6, 0));     // Yellow (Bee)
+    PAL_setColor(2, RGB(1, 1, 1));     // Black/Dark Gray
+    PAL_setColor(3, RGB(7, 7, 7));     // White (Wings / Eyes)
 
-    PAL_setColor(16 + 1, RGB32(34, 177, 76));  
-    PAL_setColor(16 + 2, RGB32(136, 0, 21));   
-    PAL_setColor(16 + 3, RGB32(100, 50, 10));  
-    PAL_setColor(16 + 4, RGB32(255, 0, 0));    
+    PAL_setColor(16 + 1, RGB(1, 5, 2));  // Grass Green
+    PAL_setColor(16 + 2, RGB(4, 0, 1));  // Dirt Brown
+    PAL_setColor(16 + 3, RGB(3, 2, 0));  // Bug Brown Body
+    PAL_setColor(16 + 4, RGB(7, 0, 0));  // Bug Red Eyes
 }
 
 // --- LOAD GRAPHICS INTO VRAM ---
@@ -95,7 +95,7 @@ void load_graphics() {
 
 // --- DRAW BACKGROUND ---
 void draw_background() {
-    VDP_clearTextArea(0, 0, 40, 28, BG_A);
+    VDP_clearTextArea(0, 0, 40, 28);
 
     int x, y;
     for (x = 0; x < 40; x++) {
@@ -110,7 +110,7 @@ void draw_background() {
 
 // --- SHOW MAIN MENU ---
 void show_menu() {
-    VDP_clearTextArea(0, 0, 40, 28, BG_A);
+    VDP_clearTextArea(0, 0, 40, 28);
 
     int i;
     for (i = 2; i < 38; i += 6) {
@@ -132,21 +132,19 @@ void show_menu() {
     VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL0, 0, 0, 0, 3), 18, 11);
 }
 
-// --- SHOW SETTINGS MENU (MANUAL REGION & LANGUAGE) ---
+// --- SHOW SETTINGS MENU ---
 void show_settings_menu() {
-    VDP_clearTextArea(0, 0, 40, 28, BG_A);
+    VDP_clearTextArea(0, 0, 40, 28);
 
     if (current_lang == LANG_EN) {
         VDP_drawText("=== SETTINGS MENU ===", 10, 6);
 
-        // Dil Seçeneği Satırı
         if (settings_selection == 0) {
-            if (current_lang == LANG_EN) VDP_drawText("> LANGUAGE: [ ENGLISH ] <", 7, 10);
+            VDP_drawText("> LANGUAGE: [ ENGLISH ] <", 7, 10);
         } else {
-            if (current_lang == LANG_EN) VDP_drawText("  LANGUAGE: [ ENGLISH ]   ", 7, 10);
+            VDP_drawText("  LANGUAGE: [ ENGLISH ]   ", 7, 10);
         }
 
-        // Manuel Bölge (Region) Seçeneği Satırı
         if (current_region == REGION_WORLD) {
             if (settings_selection == 1) {
                 VDP_drawText("> REGION: [ WORLD / US-EU ] <", 6, 13);
@@ -161,7 +159,6 @@ void show_settings_menu() {
             }
         }
 
-        // Geri Dönüş Satırı
         if (settings_selection == 2) {
             VDP_drawText("> BACK TO MAIN MENU <", 9, 17);
         } else {
@@ -352,13 +349,10 @@ int main(bool hardReset) {
 
                 if (pressed & BUTTON_START) {
                     if (settings_selection == 0) {
-                        // Dil değiştir (EN <-> JP)
                         current_lang = (current_lang == LANG_EN) ? LANG_JP : LANG_EN;
                     } else if (settings_selection == 1) {
-                        // Bölge değiştir (WORLD <-> JAPAN)
                         current_region = (current_region == REGION_WORLD) ? REGION_JAPAN : REGION_WORLD;
                     } else {
-                        // Ana menüye dön
                         current_state = STATE_MENU;
                     }
                 }
@@ -389,7 +383,7 @@ int main(bool hardReset) {
                 break;
 
             case STATE_GAME_OVER:
-                VDP_clearTextArea(0, 0, 40, 28, BG_A);
+                VDP_clearTextArea(0, 0, 40, 28);
                 if (current_lang == LANG_EN) {
                     VDP_drawText(" GAME OVER! ", 14, 12);
                     VDP_drawText("PRESS START TO RESTART", 8, 15);
@@ -405,7 +399,7 @@ int main(bool hardReset) {
         }
 
         last_state_btn = value;
-        SYS_doVBlank();
+        VDP_waitVSync();
     }
 
     return 0;
