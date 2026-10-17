@@ -1,0 +1,65 @@
+name: Build Sega Genesis ROM (Windows SGDK Direct Bin)
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    name: Clone SGDK & Build via Bin Directory
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Project Repository
+        uses: actions/checkout@v4
+
+      - name: Clone Official SGDK Repository
+        shell: pwsh
+        run: |
+          Write-Host "=== 1. SGDK GitHub Deposundan Doğrudan İndiriliyor ==="
+          git clone https://github.com/Stephane-D/SGDK.git C:\sgdk
+
+          Write-Host "=== 2. Ortam Değişkenleri Ayarlanıyor ==="
+          [Environment]::SetEnvironmentVariable("GDK", "C:\sgdk", "Process")
+          [Environment]::SetEnvironmentVariable("GDK", "C:\sgdk", "Machine")
+
+          # SGDK bin klasörünü PATH'e ekle
+          $env:Path = "C:\sgdk\bin;" + $env:Path
+          [Environment]::SetEnvironmentVariable("Path", $env:Path, "Machine")
+
+      - name: Build ROM directly using SGDK Bin Executables
+        shell: cmd
+        run: |
+          echo "=== 3. SGDK Bin Klasöründen Derleme Başlatılıyor ==="
+          set GDK=C:\sgdk
+          set PATH=C:\sgdk\bin;%PATH%
+
+          :: Doğrudan SGDK bin klasöründeki make / gmake aracı ile derle
+          C:\sgdk\bin\make -f C:/sgdk/Makefile.gen
+
+      - name: Package Genesis ROM Artifact
+        shell: pwsh
+        run: |
+          Write-Host "=== 4. ROM Dosyası Paketleniyor ==="
+          $romFile = Get-ChildItem -Path "out", "." -Include "*.bin", "*.gen" -Recurse | Select-Object -First 1
+
+          if ($romFile) {
+            Write-Host "Başarılı! ROM Dosyası Bulundu: $($romFile.FullName)"
+            Copy-Item $romFile.FullName ".\BEE_GOLD_GENESIS.bin"
+            Compress-Archive -Path "BEE_GOLD_GENESIS.bin" -DestinationPath "Bee_Gold_Collector_Genesis.zip" -Force
+            Write-Host "ZIP Paketi Hazır!"
+          } else {
+            Write-Error "Hata: ROM dosyası üretilemedi."
+            exit 1
+          }
+
+      - name: Upload Windows Genesis Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Bee-Gold-Collector-Genesis-Windows-ROM
+          if-no-files-found: error
+          path: |
+            Bee_Gold_Collector_Genesis.zip
+            BEE_GOLD_GENESIS.bin
