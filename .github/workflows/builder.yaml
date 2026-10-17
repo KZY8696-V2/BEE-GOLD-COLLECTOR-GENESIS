@@ -1,4 +1,4 @@
-name: Build Sega Genesis ROM (Windows SGDK Direct Bin)
+name: Build Sega Genesis ROM (Windows SGDK)
 
 on:
   push:
@@ -8,36 +8,56 @@ on:
 
 jobs:
   build:
-    name: Clone SGDK & Build via Bin Directory
+    name: Build via Bin Directory & Custom C File
     runs-on: windows-latest
 
     steps:
       - name: Checkout Project Repository
         uses: actions/checkout@v4
 
-      - name: Clone Official SGDK Repository
+      - name: Setup Project Structure & Clone SGDK
         shell: pwsh
         run: |
-          Write-Host "=== 1. SGDK GitHub Deposundan Doğrudan İndiriliyor ==="
+          Write-Host "=== 1. Proje Yapısı ve Dosya Konumları Ayarlanıyor ==="
+          
+          # src klasörü yoksa oluştur
+          if (!(Test-Path "src")) {
+              New-Item -ItemType Directory -Path "src"
+          }
+
+          # BGCGENESISMAIN.C (veya küçük/büyük harf varyasyonları) ana dizindeyse src içine taşı
+          $foundFile = Get-ChildItem -Path "." -Filter "*BGCGENESISMAIN*" -Recurse | Select-Object -First 1
+          if ($foundFile -and $foundFile.DirectoryName -ne "$PWD\src") {
+              Copy-Item $foundFile.FullName "src\BGCGENESISMAIN.c" -Force
+              Write-Host "Dosya src\BGCGENESISMAIN.c olarak kopyalandı."
+          }
+
+          # Özel Makefile oluştur
+          $makeContent = "SRC_C = src/BGCGENESISMAIN.c`n`ninclude `$(GDK)/Makefile.gen"
+          Set-Content -Path "Makefile" -Value $makeContent
+          Write-Host "Özel Makefile oluşturuldu!"
+
+          Write-Host "=== 2. SGDK GitHub Deposundan İndiriliyor ==="
           git clone https://github.com/Stephane-D/SGDK.git C:\sgdk
 
-          Write-Host "=== 2. Ortam Değişkenleri Ayarlanıyor ==="
           [Environment]::SetEnvironmentVariable("GDK", "C:\sgdk", "Process")
           [Environment]::SetEnvironmentVariable("GDK", "C:\sgdk", "Machine")
 
-          # SGDK bin klasörünü PATH'e ekle
           $env:Path = "C:\sgdk\bin;" + $env:Path
           [Environment]::SetEnvironmentVariable("Path", $env:Path, "Machine")
 
-      - name: Build ROM directly using SGDK Bin Executables
+      - name: Build ROM using SGDK Bin Executables
         shell: cmd
         run: |
           echo "=== 3. SGDK Bin Klasöründen Derleme Başlatılıyor ==="
           set GDK=C:\sgdk
           set PATH=C:\sgdk\bin;%PATH%
 
-          :: Doğrudan SGDK bin klasöründeki make / gmake aracı ile derle
-          C:\sgdk\bin\make -f C:/sgdk/Makefile.gen
+          :: Önceki derleme artıklarını temizle
+          C:\sgdk\bin\make -f C:/sgdk/Makefile.gen clean
+
+          :: Projeyi derle
+          C:\sgdk\bin\make release
 
       - name: Package Genesis ROM Artifact
         shell: pwsh
