@@ -1,85 +1,391 @@
-name: Build Sega Genesis ROM (Windows SGDK)
+#include <genesis.h>
 
-on:
-  push:
-    branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
+// --- LANGUAGE & REGION SUPPORT ---
+typedef enum {
+    LANG_EN,
+    LANG_JP
+} GameLanguage;
 
-jobs:
-  build:
-    name: Build via Bin Directory & Custom C File
-    runs-on: windows-latest
+typedef enum {
+    REGION_WORLD,
+    REGION_JAPAN
+} GameRegion;
 
-    steps:
-      - name: Checkout Project Repository
-        uses: actions/checkout@v4
+GameLanguage current_lang = LANG_EN;
+GameRegion current_region = REGION_WORLD;
 
-      - name: Setup Project Structure & Clone SGDK
-        shell: pwsh
-        run: |
-          Write-Host "=== 1. Proje Yapısı ve Dosya Konumları Ayarlanıyor ==="
-          
-          # src klasörü yoksa oluştur
-          if (!(Test-Path "src")) {
-              New-Item -ItemType Directory -Path "src"
-          }
+// --- GAME STATES ---
+typedef enum {
+    STATE_MENU,
+    STATE_PLAYING,
+    STATE_PAUSED,
+    STATE_SETTINGS,
+    STATE_GAME_OVER
+} GameState;
 
-          # BGCGENESISMAIN.C (veya küçük/büyük harf varyasyonları) ana dizindeyse src içine taşı
-          $foundFile = Get-ChildItem -Path "." -Filter "*BGCGENESISMAIN*" -Recurse | Select-Object -First 1
-          if ($foundFile -and $foundFile.DirectoryName -ne "$PWD\src") {
-              Copy-Item $foundFile.FullName "src\BGCGENESISMAIN.c" -Force
-              Write-Host "Dosya src\BGCGENESISMAIN.c olarak kopyalandı."
-          }
+GameState current_state = STATE_MENU;
 
-          # Özel Makefile oluştur
-          $makeContent = "SRC_C = src/BGCGENESISMAIN.c`n`ninclude `$(GDK)/Makefile.gen"
-          Set-Content -Path "Makefile" -Value $makeContent
-          Write-Host "Özel Makefile oluşturuldu!"
+// --- GAME VARIABLES ---
+int bee_x = 40;
+int bee_y = 100;
+int bee_lives = 3;
+int score = 0;
+u32 timer_counter = 0;
+u16 spawn_timer = 0;
+int pause_selection = 0;
+int settings_selection = 0;
 
-          Write-Host "=== 2. SGDK GitHub Deposundan İndiriliyor ==="
-          git clone https://github.com/Stephane-D/SGDK.git C:\sgdk
+// --- ENEMY BUG STRUCTURE ---
+#define MAX_BUGS 4
+typedef struct {
+    int x, y;
+    int active;
+    int speed;
+} Bug;
 
-          [Environment]::SetEnvironmentVariable("GDK", "C:\sgdk", "Process")
-          [Environment]::SetEnvironmentVariable("GDK", "C:\sgdk", "Machine")
+Bug bugs[MAX_BUGS];
 
-          $env:Path = "C:\sgdk\bin;" + $env:Path
-          [Environment]::SetEnvironmentVariable("Path", $env:Path, "Machine")
+// --- TILE GRAPHICS DATA ---
+const u32 tile_grass[8] = {
+    0x33333333, 0x31133113, 0x11111111, 0x12211221,
+    0x22222222, 0x22222222, 0x22222222, 0x22222222
+};
 
-      - name: Build ROM using SGDK Bin Executables
-        shell: cmd
-        run: |
-          echo "=== 3. SGDK Bin Klasöründen Derleme Başlatılıyor ==="
-          set GDK=C:\sgdk
-          set PATH=C:\sgdk\bin;%PATH%
+const u32 tile_dirt[8] = {
+    0x44444444, 0x42444244, 0x22222222, 0x42244224,
+    0x44444444, 0x24222422, 0x22222222, 0x44444444
+};
 
-          :: Önceki derleme artıklarını temizle
-          C:\sgdk\bin\make -f C:/sgdk/Makefile.gen clean
+const u32 tile_bee_body[8] = {
+    0x08000800, 0x33111133, 0x31422413, 0x12222221,
+    0x12222221, 0x31222213, 0x03111130, 0x05000050
+};
 
-          :: Projeyi derle
-          C:\sgdk\bin\make release
+const u32 tile_bug_body[8] = {
+    0x60033006, 0x33455433, 0x55555555, 0x56555565,
+    0x55555555, 0x33455433, 0x60033006, 0x00000000
+};
 
-      - name: Package Genesis ROM Artifact
-        shell: pwsh
-        run: |
-          Write-Host "=== 4. ROM Dosyası Paketleniyor ==="
-          $romFile = Get-ChildItem -Path "out", "." -Include "*.bin", "*.gen" -Recurse | Select-Object -First 1
+const u32 tile_flower[8] = {
+    0x00333000, 0x03777300, 0x37666730, 0x37616730,
+    0x37666730, 0x03777300, 0x00222000, 0x00222000
+};
 
-          if ($romFile) {
-            Write-Host "Başarılı! ROM Dosyası Bulundu: $($romFile.FullName)"
-            Copy-Item $romFile.FullName ".\BEE_GOLD_GENESIS.bin"
-            Compress-Archive -Path "BEE_GOLD_GENESIS.bin" -DestinationPath "Bee_Gold_Collector_Genesis.zip" -Force
-            Write-Host "ZIP Paketi Hazır!"
-          } else {
-            Write-Error "Hata: ROM dosyası üretilemedi."
-            exit 1
-          }
+// --- INITIALIZE COLOR PALETTES ---
+void init_palettes() {
+    PAL_setColor(0, RGB(1, 1, 4));     
+    PAL_setColor(1, RGB(7, 6, 0));     
+    PAL_setColor(2, RGB(1, 1, 1));     
+    PAL_setColor(3, RGB(7, 7, 7));     
 
-      - name: Upload Windows Genesis Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: Bee-Gold-Collector-Genesis-Windows-ROM
-          if-no-files-found: error
-          path: |
-            Bee_Gold_Collector_Genesis.zip
-            BEE_GOLD_GENESIS.bin
+    PAL_setColor(16 + 1, RGB(1, 5, 2));  
+    PAL_setColor(16 + 2, RGB(4, 0, 1));  
+    PAL_setColor(16 + 3, RGB(3, 2, 0));  
+    PAL_setColor(16 + 4, RGB(7, 0, 0));  
+}
+
+// --- LOAD GRAPHICS ---
+void load_graphics() {
+    VDP_loadTileData(tile_grass, 1, 1, DMA);
+    VDP_loadTileData(tile_dirt, 2, 1, DMA);
+    VDP_loadTileData(tile_bee_body, 3, 1, DMA);
+    VDP_loadTileData(tile_bug_body, 4, 1, DMA);
+    VDP_loadTileData(tile_flower, 5, 1, DMA);
+}
+
+// --- DRAW BACKGROUND ---
+void draw_background() {
+    VDP_clearTextArea(0, 0, 40, 28);
+
+    int x, y;
+    for (x = 0; x < 40; x++) {
+        VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL0, 0, 0, 0, 1), x, 23);
+        VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL0, 0, 0, 0, 1), x, 24);
+        
+        for (y = 25; y < 28; y++) {
+            VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL0, 0, 0, 0, 2), x, y);
+        }
+    }
+}
+
+// --- SHOW MAIN MENU ---
+void show_menu() {
+    VDP_clearTextArea(0, 0, 40, 28);
+
+    int i;
+    for (i = 2; i < 38; i += 6) {
+        VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL1, 0, 0, 0, 5), i, 21);
+    }
+
+    if (current_lang == LANG_EN) {
+        VDP_drawText("BEE GOLD COLLECTOR", 10, 6);
+        VDP_drawText("SEGA GENESIS EDITION", 10, 8);
+        VDP_drawText("PRESS [START] TO PLAY", 9, 15);
+        VDP_drawText("PRESS [A] FOR SETTINGS", 9, 17);
+    } else {
+        VDP_drawText("HATI KOGANE COLLECTOR", 9, 6);
+        VDP_drawText("MEGA DRIVE BAN", 12, 8);
+        VDP_drawText("START WO OSHITE KAISHI", 9, 15);
+        VDP_drawText("[A] BUTTON DE SETTEI", 10, 17);
+    }
+    
+    VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL0, 0, 0, 0, 3), 18, 11);
+}
+
+// --- SHOW SETTINGS MENU ---
+void show_settings_menu() {
+    VDP_clearTextArea(0, 0, 40, 28);
+
+    if (current_lang == LANG_EN) {
+        VDP_drawText("=== SETTINGS MENU ===", 10, 6);
+
+        if (settings_selection == 0) {
+            VDP_drawText("> LANGUAGE: [ ENGLISH ] <", 7, 10);
+        } else {
+            VDP_drawText("  LANGUAGE: [ ENGLISH ]   ", 7, 10);
+        }
+
+        if (current_region == REGION_WORLD) {
+            if (settings_selection == 1) {
+                VDP_drawText("> REGION: [ WORLD / US-EU ] <", 6, 13);
+            } else {
+                VDP_drawText("  REGION: [ WORLD / US-EU ]   ", 6, 13);
+            }
+        } else {
+            if (settings_selection == 1) {
+                VDP_drawText("> REGION: [ JAPAN / NTSC-J ] <", 6, 13);
+            } else {
+                VDP_drawText("  REGION: [ JAPAN / NTSC-J ]   ", 6, 13);
+            }
+        }
+
+        if (settings_selection == 2) {
+            VDP_drawText("> BACK TO MAIN MENU <", 9, 17);
+        } else {
+            VDP_drawText("  BACK TO MAIN MENU   ", 9, 17);
+        }
+
+        VDP_drawText("USE D-PAD & [START] TO EDIT", 7, 21);
+    } else {
+        VDP_drawText("=== SETTEI MENU ===", 11, 6);
+
+        if (settings_selection == 0) {
+            VDP_drawText("> GENGOU: [ NIHONGO ] <", 8, 10);
+        } else {
+            VDP_drawText("  GENGOU: [ NIHONGO ]   ", 8, 10);
+        }
+
+        if (current_region == REGION_WORLD) {
+            if (settings_selection == 1) {
+                VDP_drawText("> CHIYIKI: [ WORLD ] <", 9, 13);
+            } else {
+                VDP_drawText("  CHIYIKI: [ WORLD ]   ", 9, 13);
+            }
+        } else {
+            if (settings_selection == 1) {
+                VDP_drawText("> CHIYIKI: [ JAPAN ] <", 9, 13);
+            } else {
+                VDP_drawText("  CHIYIKI: [ JAPAN ]   ", 9, 13);
+            }
+        }
+
+        if (settings_selection == 2) {
+            VDP_drawText("> MAIN MENU E MODORU <", 9, 17);
+        } else {
+            VDP_drawText("  MAIN MENU E MODORU   ", 9, 17);
+        }
+
+        VDP_drawText("START DE KETTEI", 12, 21);
+    }
+}
+
+// --- SHOW PAUSE MENU ---
+void show_pause_menu() {
+    if (current_lang == LANG_EN) {
+        VDP_drawText("=== GAME PAUSED ===", 10, 10);
+        if (pause_selection == 0) {
+            VDP_drawText("> RESUME GAME <", 12, 14);
+            VDP_drawText("  MAIN MENU    ", 12, 16);
+        } else {
+            VDP_drawText("  RESUME GAME  ", 12, 14);
+            VDP_drawText("> MAIN MENU   <", 12, 16);
+        }
+        VDP_drawText("PRESS [START] TO SELECT", 8, 20);
+    } else {
+        VDP_drawText("=== PAUSECHU ===", 12, 10);
+        if (pause_selection == 0) {
+            VDP_drawText("> SAIKAI SURU  <", 12, 14);
+            VDP_drawText("  MAIN MENU    ", 12, 16);
+        } else {
+            VDP_drawText("  SAIKAI SURU  ", 12, 14);
+            VDP_drawText("> MAIN MENU   <", 12, 16);
+        }
+        VDP_drawText("START DE KETTEI", 12, 20);
+    }
+}
+
+// --- RESET GAME ---
+void reset_game() {
+    bee_x = 40;
+    bee_y = 100;
+    bee_lives = 3;
+    score = 0;
+    timer_counter = 0;
+    spawn_timer = 0;
+    pause_selection = 0;
+
+    int i;
+    for (i = 0; i < MAX_BUGS; i++) {
+        bugs[i].active = 0;
+    }
+
+    draw_background();
+}
+
+// --- UPDATE GAME ---
+void update_game() {
+    u16 value = JOY_readJoypad(JOY_1);
+
+    if (value & BUTTON_UP)    { if (bee_y > 16)  bee_y -= 2; }
+    if (value & BUTTON_DOWN)  { if (bee_y < 170) bee_y += 2; }
+    if (value & BUTTON_LEFT)  { if (bee_x > 8)   bee_x -= 2; }
+    if (value & BUTTON_RIGHT) { if (bee_x < 280) bee_x += 2; }
+
+    bee_x += 1;
+    if (bee_x > 300) bee_x = 20;
+
+    spawn_timer++;
+    if (spawn_timer > 60) {
+        spawn_timer = 0;
+        int i;
+        for (i = 0; i < MAX_BUGS; i++) {
+            if (!bugs[i].active) {
+                bugs[i].active = 1;
+                bugs[i].x = 320;
+                bugs[i].y = 30 + (random() % 120);
+                bugs[i].speed = 1 + (random() % 2);
+                break;
+            }
+        }
+    }
+
+    int i;
+    for (i = 0; i < MAX_BUGS; i++) {
+        if (bugs[i].active) {
+            bugs[i].x -= bugs[i].speed;
+
+            if (bugs[i].x < -16) {
+                bugs[i].active = 0;
+                score += 10;
+            }
+
+            if (abs(bee_x - bugs[i].x) < 12 && abs(bee_y - bugs[i].y) < 12) {
+                bee_lives--;
+                bugs[i].active = 0;
+                
+                if (bee_lives <= 0) {
+                    current_state = STATE_GAME_OVER;
+                }
+            }
+        }
+    }
+
+    timer_counter++;
+    if (timer_counter >= 900) {
+        timer_counter = 0;
+        bee_lives += 2;
+        if (bee_lives > 9) bee_lives = 9;
+    }
+
+    VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL0, 0, 0, 0, 3), bee_x >> 3, bee_y >> 3);
+
+    for (i = 0; i < MAX_BUGS; i++) {
+        if (bugs[i].active) {
+            VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL1, 0, 0, 0, 4), bugs[i].x >> 3, bugs[i].y >> 3);
+        }
+    }
+
+    char buf[32];
+    if (current_lang == LANG_EN) {
+        sprintf(buf, "LIVES: %d  SCORE: %d", bee_lives, score);
+    } else {
+        sprintf(buf, "INCHI: %d  TENTOU: %d", bee_lives, score);
+    }
+    VDP_drawText(buf, 2, 2);
+}
+
+// --- MAIN FUNCTION ---
+int main(bool hardReset) {
+    VDP_init();
+    SPR_init();
+    
+    init_palettes();
+    load_graphics();
+
+    u16 last_state_btn = 0;
+
+    while(1) {
+        u16 value = JOY_readJoypad(JOY_1);
+        u16 pressed = value & ~last_state_btn;
+
+        switch(current_state) {
+            case STATE_MENU:
+                show_menu();
+                if (pressed & BUTTON_A) {
+                    settings_selection = 0;
+                    current_state = STATE_SETTINGS;
+                }
+                if (pressed & BUTTON_START) {
+                    reset_game();
+                    current_state = STATE_PLAYING;
+                }
+                break;
+
+            case STATE_SETTINGS:
+                show_settings_menu();
+                
+                if (pressed & BUTTON_UP)   { settings_selection = (settings_selection > 0) ? settings_selection - 1 : 2; }
+                if (pressed & BUTTON_DOWN) { settings_selection = (settings_selection < 2) ? settings_selection + 1 : 0; }
+
+                if (pressed & BUTTON_START) {
+                    if (settings_selection == 0) {
+                        current_lang = (current_lang == LANG_EN) ? LANG_JP : LANG_EN;
+                    } else if (settings_selection == 1) {
+                        current_region = (current_region == REGION_WORLD) ? REGION_JAPAN : REGION_WORLD;
+                    } else {
+                        current_state = STATE_MENU;
+                    }
+                }
+                break;
+
+            case STATE_PLAYING:
+                if (pressed & BUTTON_START) {
+                    current_state = STATE_PAUSED;
+                    break;
+                }
+                update_game();
+                break;
+
+            case STATE_PAUSED:
+                show_pause_menu();
+                
+                if (pressed & BUTTON_UP)   { pause_selection = 0; }
+                if (pressed & BUTTON_DOWN) { pause_selection = 1; }
+
+                if (pressed & BUTTON_START) {
+                    if (pause_selection == 0) {
+                        draw_background();
+                        current_state = STATE_PLAYING;
+                    } else {
+                        current_state = STATE_MENU;
+                    }
+                }
+                break;
+
+            case STATE_GAME_OVER:
+                VDP_clearTextArea(0, 0, 40, 28);
+                if (current_lang == LANG_EN) {
+                    VDP_drawText(" GAME OVER! ", 14, 12);
+                    VDP_drawText("PRESS START TO RESTART", 8, 15);
+                } else {
+                    V`DP_drawText(" GAMU OBAA! ", 14, 12); // Wait, let's fix this typo just in case: VDP_drawText
