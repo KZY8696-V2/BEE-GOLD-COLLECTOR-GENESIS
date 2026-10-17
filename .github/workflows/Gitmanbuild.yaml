@@ -1,4 +1,4 @@
-name: Build Sega Genesis ROM (Windows SGDK)
+name: Build Sega Genesis ROM (SGDK v2.1.1)
 
 on:
   push:
@@ -8,35 +8,36 @@ on:
 
 jobs:
   build:
-    name: Build via Bin Directory & Custom C File
+    name: Build via SGDK v2.1.1 & Makefile Setup
     runs-on: windows-latest
 
     steps:
       - name: Checkout Project Repository
         uses: actions/checkout@v4
 
-      - name: Setup Project Structure & Clone SGDK
+      - name: Setup Makefile & Verify Source File
         shell: pwsh
         run: |
-          Write-Host "=== 1. Proje Yapısı ve Dosya Konumları Ayarlanıyor ==="
+          Write-Host "=== 1. Makefile ve C Kaynak Dosyası Ayarlanıyor ==="
           
-          if (!(Test-Path "src")) {
-              New-Item -ItemType Directory -Path "src"
+          # src/BGCGENESISMAIN.c var mı kontrol et
+          if (!(Test-Path "src/BGCGENESISMAIN.c")) {
+              Write-Error "Hata: src/BGCGENESISMAIN.c dosyası bulunamadı! Lütfen repoda bu yolda olduğundan emin olun."
+              exit 1
+          } else {
+              Write-Host "Kaynak dosya doğrulandı: src/BGCGENESISMAIN.c"
           }
 
-          $foundFile = Get-ChildItem -Path "." -Filter "*BGCGENESISMAIN*" -Recurse | Select-Object -First 1
-          if ($foundFile -and $foundFile.DirectoryName -ne "$PWD\src") {
-              Copy-Item $foundFile.FullName "src\BGCGENESISMAIN.c" -Force
-              Write-Host "Dosya src\BGCGENESISMAIN.c olarak kopyalandı."
-          }
-
-          # Sabit ve garantili C:/sgdk yolunu Makefile içine yazıyoruz
+          # Kök dizine SGDK v2.1.1 uyumlu Makefile'ı otomatik yazdırıyoruz
           $makeContent = "SRC_C = src/BGCGENESISMAIN.c`n`ninclude C:/sgdk/Makefile.gen"
           Set-Content -Path "Makefile" -Value $makeContent
-          Write-Host "Özel Makefile oluşturuldu!"
+          Write-Host "Makefile başarıyla oluşturuldu."
 
-          Write-Host "=== 2. SGDK GitHub Deposundan İndiriliyor ==="
-          git clone https://github.com/Stephane-D/SGDK.git C:\sgdk
+      - name: Clone SGDK v2.1.1 & Setup Environment
+        shell: pwsh
+        run: |
+          Write-Host "=== 2. SGDK v2.1.1 Resmi Deposundan İndiriliyor ==="
+          git clone --branch v2.1.1 --depth 1 https://github.com/Stephane-D/SGDK.git C:\sgdk
 
           [Environment]::SetEnvironmentVariable("GDK", "C:\sgdk", "Process")
           [Environment]::SetEnvironmentVariable("GDK", "C:\sgdk", "Machine")
@@ -47,7 +48,7 @@ jobs:
       - name: Build ROM using SGDK Bin Executables
         shell: cmd
         run: |
-          echo "=== 3. SGDK Bin Klasöründen Derleme Başlatılıyor ==="
+          echo "=== 3. SGDK v2.1.1 Bin Klasöründen Derleme Başlatılıyor ==="
           set GDK=C:\sgdk
           set PATH=C:\sgdk\bin;%PATH%
 
@@ -63,7 +64,7 @@ jobs:
           if ($romFile) {
             Write-Host "Başarılı! ROM Dosyası Bulundu: $($romFile.FullName)"
             Copy-Item $romFile.FullName ".\BEE_GOLD_GENESIS.bin"
-            Compress-Archive -Path "BEE_GOLD_GENESIS.bin" -DestinationPath "Bee_Gold_Collector_Genesis.zip" -Force
+            Compress-Archive -Path "BEE_GOLD_GENESIS.bin" -DestinationPath "Bee_Gold_Collector_v211.zip" -Force
             Write-Host "ZIP Paketi Hazır!"
           } else {
             Write-Error "Hata: ROM dosyası üretilemedi."
@@ -73,8 +74,8 @@ jobs:
       - name: Upload Windows Genesis Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Bee-Gold-Collector-Genesis-Windows-ROM
+          name: Bee-Gold-Collector-v211-ROM
           if-no-files-found: error
           path: |
-            Bee_Gold_Collector_Genesis.zip
+            Bee_Gold_Collector_v211.zip
             BEE_GOLD_GENESIS.bin
