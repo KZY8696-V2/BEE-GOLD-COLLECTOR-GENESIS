@@ -1,4 +1,4 @@
-name: Build Sega Genesis ROM (SGDK v2.11)
+name: BEE GOLD COLLECTOR GENESIS EDITION PROTOTYPE 1.0.0
 
 on:
   push:
@@ -18,16 +18,18 @@ jobs:
       - name: Setup Makefile & Verify Source File
         shell: pwsh
         run: |
-          Write-Host "=== 1. Makefile ve C Kaynak Dosyası Ayarlanıyor ==="
+          Write-Host "=== 1. Kaynak Dosya Kontrolü ve Makefile Hazırlığı ==="
           
-          if (!(Test-Path "src/BGCGENESISMAIN.c")) {
-              Write-Error "Hata: src/BGCGENESISMAIN.c dosyası bulunamadı! Lütfen repoda bu yolda olduğundan emin olun."
+          $cFile = Get-ChildItem -Path "src" -Filter "BGCGENESISMAIN.*" | Select-Object -First 1
+
+          if (-not $cFile) {
+              Write-Error "Hata: src klasöründe BGCGENESISMAIN dosyası bulunamadı!"
               exit 1
-          } else {
-              Write-Host "Kaynak dosya doğrulandı: src/BGCGENESISMAIN.c"
           }
 
-          $makeContent = "SRC_C = src/BGCGENESISMAIN.c`n`ninclude C:/sgdk/Makefile.gen"
+          Write-Host "Bulunan kaynak dosya: $($cFile.Name)"
+
+          $makeContent = "SRC_C = src/$($cFile.Name)`n`ninclude C:/sgdk/Makefile.gen"
           Set-Content -Path "Makefile" -Value $makeContent
           Write-Host "Makefile başarıyla oluşturuldu."
 
