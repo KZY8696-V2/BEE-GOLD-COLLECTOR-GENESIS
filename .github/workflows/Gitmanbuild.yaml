@@ -29,7 +29,8 @@ jobs:
 
           Write-Host "Bulunan kaynak dosya: $($cFile.Name)"
 
-          $makeContent = "SRC_C = src/$($cFile.Name)`n`ninclude C:/sgdk/Makefile.gen"
+          # SGDK'nın resmi derleme şablonu (Tüm kütüphaneleri ve boot sektörünü doğru bağlar)
+          $makeContent = "include C:/sgdk/Makefile.gen"
           Set-Content -Path "Makefile" -Value $makeContent
           Write-Host "Makefile başarıyla oluşturuldu."
 
@@ -53,21 +54,22 @@ jobs:
           set PATH=C:\sgdk\bin;%PATH%
 
           C:\sgdk\bin\make -f C:/sgdk/Makefile.gen clean
-          C:\sgdk\bin\make release
+          C:\sgdk\bin\make -f C:/sgdk/Makefile.gen release
 
       - name: Package Genesis ROM Artifact
         shell: pwsh
         run: |
           Write-Host "=== 4. ROM Dosyası Paketleniyor ==="
-          $romFile = Get-ChildItem -Path "out", "." -Include "*.bin", "*.gen" -Recurse | Select-Object -First 1
+          # SGDK çıktıyı out/rom.bin veya rom.bin olarak verir
+          $romFile = Get-ChildItem -Path "out", "." -Include "*.bin", "*.gen" -Recurse | Where-Object { $_.Length -gt 2000 } | Select-Object -First 1
 
           if ($romFile) {
-            Write-Host "Başarılı! ROM Dosyası Bulundu: $($romFile.FullName)"
+            Write-Host "Başarılı! Gerçek ROM Dosyası Bulundu: $($romFile.FullName) (Boyut: $($romFile.Length) bytes)"
             Copy-Item $romFile.FullName ".\BEE_GOLD_GENESIS.bin"
             Compress-Archive -Path "BEE_GOLD_GENESIS.bin" -DestinationPath "Bee_Gold_Collector_v211.zip" -Force
             Write-Host "ZIP Paketi Hazır!"
           } else {
-            Write-Error "Hata: ROM dosyası üretilemedi."
+            Write-Error "Hata: Gerçek ROM dosyası üretilemedi (Çıktı çok küçük veya eksik)."
             exit 1
           }
 
