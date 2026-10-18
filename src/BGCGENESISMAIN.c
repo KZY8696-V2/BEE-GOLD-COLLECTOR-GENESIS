@@ -295,7 +295,7 @@ void update_game(void) {
         }
     }
 
-    // Ekran paneli (SGDK intToDec)
+        // Ekran paneli (SGDK intToStr)
     VDP_drawText("LIV:", 2, 2);
     VDP_drawText("SCR:", 12, 2);
     VDP_drawText("LOP:", 24, 2);
@@ -304,9 +304,10 @@ void update_game(void) {
     char scr_str[6];
     char lop_str[4];
 
-    intToDec(bee_lives, liv_str, 1);
-    intToDec(score, scr_str, 4);
-    intToDec(stage_loop, lop_str, 1);
+    // İŞTE BU SATIRLAR:
+    intToStr(bee_lives, liv_str, 1);
+    intToStr(score, scr_str, 4);
+    intToStr(stage_loop, lop_str, 1);
 
     VDP_drawText(liv_str, 6, 2);
     VDP_drawText(scr_str, 16, 2);
