@@ -244,8 +244,8 @@ void update_game() {
             if (!bugs[i].active) {
                 bugs[i].active = 1;
                 bugs[i].x = 320;
-                bugs[i].y = 30 + (SYS_getRand() % 120);
-                bugs[i].speed = 1 + (SYS_getRand() % 2);
+                bugs[i].y = 30 + (random() % 120);
+                bugs[i].speed = 1 + (random() % 2);
                 break;
             }
         }
