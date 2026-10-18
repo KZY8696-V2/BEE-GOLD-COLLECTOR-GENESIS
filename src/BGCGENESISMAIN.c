@@ -1,5 +1,10 @@
 #include <genesis.h>
 
+// SGDK uyumlu RGB makro tanımı (0-7 arası renk tonları için)
+#ifndef RGB
+#define RGB(r, g, b) (((b) << 9) | ((g) << 5) | ((r) << 1))
+#endif
+
 // --- LANGUAGE & REGION SUPPORT ---
 typedef enum {
     LANG_EN, // English
