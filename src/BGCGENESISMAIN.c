@@ -1,6 +1,4 @@
 #include <genesis.h>
-#include <stdlib.h>
-#include <stdio.h>
 
 // SGDK uyumlu RGB makro tanımı (0-7 arası renk tonları)
 #ifndef RGB
