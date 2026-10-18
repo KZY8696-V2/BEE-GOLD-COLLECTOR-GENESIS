@@ -1,23 +1,22 @@
 #include <genesis.h>
 
-// SGDK uyumlu RGB makro tanımı (0-7 arası renk tonları)
 #ifndef RGB
 #define RGB(r, g, b) (((b) << 9) | ((g) << 5) | ((r) << 1))
 #endif
 
 // --- LANGUAGE & REGION SUPPORT ---
 typedef enum {
-    GAME_LANG_EN, // English
-    GAME_LANG_JP  // Japanese
+    LANG_EN,
+    LANG_JP
 } GameLanguage;
 
 typedef enum {
-    GAME_REGION_WORLD, // USA / Europe (NTSC-U / E)
-    GAME_REGION_JAPAN  // Japan (NTSC-J / Mega Drive)
+    REG_WORLD,
+    REG_JAPAN
 } GameRegion;
 
-static GameLanguage current_lang = GAME_LANG_EN;
-static GameRegion current_region = GAME_REGION_WORLD;
+static GameLanguage current_lang = LANG_EN;
+static GameRegion current_region = REG_WORLD;
 
 // --- GAME STATES ---
 typedef enum {
@@ -29,20 +28,21 @@ typedef enum {
 } GameState;
 
 static GameState current_state = STATE_MENU;
-static GameState last_state = (GameState)-1; // Ekranın sürekli baştan çizilmesini engellemek için
+static GameState last_state = (GameState)-1;
 
 // --- GAME VARIABLES ---
 static int bee_x = 40;
 static int bee_y = 100;
-static int bee_lives = 3;
+static int bee_lives = 3;       // Başlangıçta 3 can
 static int score = 0;
-static u32 timer_counter = 0;
+static int stage_loop = 1;
+static u32 timer_counter = 0;   // 15 saniyede can artışı için sayaç
 static u16 spawn_timer = 0;
 static int pause_selection = 0;
-static int settings_selection = 0; // 0: Language, 1: Region, 2: Back
+static int settings_selection = 0;
 
 // --- ENEMY BUG STRUCTURE ---
-#define MAX_BUGS 4
+#define MAX_BUGS 5
 typedef struct {
     int x, y;
     int active;
@@ -51,7 +51,7 @@ typedef struct {
 
 static Bug bugs[MAX_BUGS];
 
-// --- DETAILED PIXEL GRAPHICS TILE DATA ---
+// --- CARTOON GRAPHICS (Ellipse Bee & Cute Round Bug - Definitely NOT a snake!) ---
 static const u32 tile_grass[8] = {
     0x33333333, 0x31133113, 0x11111111, 0x12211221,
     0x22222222, 0x22222222, 0x22222222, 0x22222222
@@ -62,14 +62,28 @@ static const u32 tile_dirt[8] = {
     0x44444444, 0x24222422, 0x22222222, 0x44444444
 };
 
-static const u32 tile_bee_body[8] = {
-    0x08000800, 0x33111133, 0x31422413, 0x12222221,
-    0x12222221, 0x31222213, 0x03111130, 0x05000050
+// Çizgi film Arı (Elips gövde, anten, göz, kanat, ayaklar)
+static const u32 tile_cartoon_bee[8] = {
+    0x0A000A00, 
+    0x3F33333F, 
+    0x31422413, 
+    0x12222221, 
+    0x12222221, 
+    0x31222213, 
+    0x03111130, 
+    0x0A0000A0  
 };
 
-static const u32 tile_bug_body[8] = {
-    0x60033006, 0x33455433, 0x55555555, 0x56555565,
-    0x55555555, 0x33455433, 0x60033006, 0x00000000
+// Sevimli Kahverengi Böcek (Yuvarlak/elips gövde, göz, anten, kanat, bacak - Asla yılan değil!)
+static const u32 tile_round_bug[8] = {
+    0x40022004, 
+    0x22444422, 
+    0x44333344, 
+    0x45444454, 
+    0x44444444, 
+    0x22444422, 
+    0x40022004, 
+    0x00000000  
 };
 
 static const u32 tile_flower[8] = {
@@ -77,78 +91,67 @@ static const u32 tile_flower[8] = {
     0x37666730, 0x03777300, 0x00222000, 0x00222000
 };
 
-// --- INITIALIZE COLOR PALETTES ---
-void init_palettes() {
-    PAL_setColor(0, RGB(1, 1, 4));       // Dark Sky
-    PAL_setColor(1, RGB(7, 6, 0));       // Yellow (Bee)
-    PAL_setColor(2, RGB(1, 1, 1));       // Black/Dark Gray
-    PAL_setColor(3, RGB(7, 7, 7));       // White
+void init_palettes(void) {
+    PAL_setColor(0, RGB(1, 1, 4));       
+    PAL_setColor(1, RGB(7, 6, 0));       
+    PAL_setColor(2, RGB(1, 1, 1));       
+    PAL_setColor(3, RGB(7, 7, 7));       
 
-    PAL_setColor(16 + 1, RGB(1, 5, 2));  // Grass Green
-    PAL_setColor(16 + 2, RGB(4, 0, 1));  // Dirt Brown
-    PAL_setColor(16 + 3, RGB(3, 2, 0));  // Bug Brown
-    PAL_setColor(16 + 4, RGB(7, 0, 0));  // Bug Red
+    PAL_setColor(16 + 1, RGB(1, 5, 2));  
+    PAL_setColor(16 + 2, RGB(4, 0, 1));  
+    PAL_setColor(16 + 3, RGB(4, 2, 0));  // Kahverengi Böcek Rengi
+    PAL_setColor(16 + 4, RGB(7, 0, 0));  
 }
 
-// --- LOAD GRAPHICS INTO VRAM ---
-void load_graphics() {
+void load_graphics(void) {
     VDP_loadTileData(tile_grass, 1, 1, DMA);
     VDP_loadTileData(tile_dirt, 2, 1, DMA);
-    VDP_loadTileData(tile_bee_body, 3, 1, DMA);
-    VDP_loadTileData(tile_bug_body, 4, 1, DMA);
+    VDP_loadTileData(tile_cartoon_bee, 3, 1, DMA);
+    VDP_loadTileData(tile_round_bug, 4, 1, DMA);
     VDP_loadTileData(tile_flower, 5, 1, DMA);
 }
 
-// --- DRAW BACKGROUND ---
-void draw_background() {
+void draw_background(void) {
     VDP_clearTextArea(0, 0, 40, 28);
-
     int x, y;
     for (x = 0; x < 40; x++) {
         VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL0, 0, 0, 0, 1), x, 23);
         VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL0, 0, 0, 0, 1), x, 24);
-        
         for (y = 25; y < 28; y++) {
             VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL0, 0, 0, 0, 2), x, y);
         }
     }
 }
 
-// --- SHOW MAIN MENU ---
-void show_menu() {
+void show_menu(void) {
     VDP_clearTextArea(0, 0, 40, 28);
-
     int i;
     for (i = 2; i < 38; i += 6) {
         VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL1, 0, 0, 0, 5), i, 21);
     }
 
-    if (current_lang == GAME_LANG_EN) {
-        VDP_drawText("BEE GOLD COLLECTOR", 10, 6);
-        VDP_drawText("SEGA GENESIS EDITION", 10, 8);
+    if (current_lang == LANG_EN) {
+        VDP_drawText("BEE GOLD COLLECTOR", 10, 5);
+        VDP_drawText("ENDLESS FLIGHT RUN", 10, 7);
         VDP_drawText("PRESS [A] TO PLAY", 11, 15);
         VDP_drawText("PRESS [B] FOR SETTINGS", 10, 17);
     } else {
-        VDP_drawText("HATI KOGANE COLLECTOR", 9, 6);
-        VDP_drawText("MEGA DRIVE BAN", 12, 8);
+        VDP_drawText("HATI KOGANE COLLECTOR", 9, 5);
+        VDP_drawText("MUGEN FLIGHT BAN", 11, 7);
         VDP_drawText("[A] BUTTON DE KAISHI", 10, 15);
         VDP_drawText("[B] BUTTON DE SETTEI", 10, 17);
     }
-    
     VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL0, 0, 0, 0, 3), 18, 11);
 }
 
-// --- SHOW SETTINGS MENU ---
-void show_settings_menu() {
+void show_settings_menu(void) {
     VDP_clearTextArea(0, 0, 40, 28);
-
-    if (current_lang == GAME_LANG_EN) {
+    if (current_lang == LANG_EN) {
         VDP_drawText("=== SETTINGS MENU ===", 10, 6);
-
         if (settings_selection == 0) VDP_drawText("> LANGUAGE: [ ENGLISH ] <", 7, 10);
         else                          VDP_drawText("  LANGUAGE: [ ENGLISH ]   ", 7, 10);
 
-        if (current_region == GAME_REGION_WORLD) {
+        if (current_region == REG_WORLD) {
             if (settings_selection == 1) VDP_drawText("> REGION: [ WORLD / US-EU ] <", 5, 13);
             else                          VDP_drawText("  REGION: [ WORLD / US-EU ]   ", 5, 13);
         } else {
@@ -158,15 +161,13 @@ void show_settings_menu() {
 
         if (settings_selection == 2) VDP_drawText("> BACK TO MAIN MENU <", 9, 17);
         else                          VDP_drawText("  BACK TO MAIN MENU   ", 9, 17);
-
         VDP_drawText("USE D-PAD & [A] TO EDIT, [B] BACK", 3, 21);
     } else {
         VDP_drawText("=== SETTEI MENU ===", 11, 6);
-
         if (settings_selection == 0) VDP_drawText("> GENGOU: [ NIHONGO ] <", 8, 10);
         else                          VDP_drawText("  GENGOU: [ NIHONGO ]   ", 8, 10);
 
-        if (current_region == GAME_REGION_WORLD) {
+        if (current_region == REG_WORLD) {
             if (settings_selection == 1) VDP_drawText("> CHIYIKI: [ WORLD ] <", 8, 13);
             else                          VDP_drawText("  CHIYIKI: [ WORLD ]   ", 8, 13);
         } else {
@@ -176,14 +177,12 @@ void show_settings_menu() {
 
         if (settings_selection == 2) VDP_drawText("> MAIN MENU E MODORU <", 8, 17);
         else                          VDP_drawText("  MAIN MENU E MODORU   ", 8, 17);
-
         VDP_drawText("[A] DE KETTEI, [B] MODORU", 7, 21);
     }
 }
 
-// --- SHOW PAUSE MENU ---
-void show_pause_menu() {
-    if (current_lang == GAME_LANG_EN) {
+void show_pause_menu(void) {
+    if (current_lang == LANG_EN) {
         VDP_drawText("=== GAME PAUSED ===", 10, 10);
         if (pause_selection == 0) {
             VDP_drawText("> RESUME GAME [A] <", 10, 14);
@@ -206,13 +205,13 @@ void show_pause_menu() {
     }
 }
 
-// --- RESET GAME STATE ---
-void reset_game() {
+void reset_game(void) {
     bee_x = 40;
     bee_y = 100;
-    bee_lives = 3;
+    bee_lives = 3;              
     score = 0;
-    timer_counter = 0;
+    stage_loop = 1;
+    timer_counter = 0;          
     spawn_timer = 0;
     pause_selection = 0;
 
@@ -220,24 +219,36 @@ void reset_game() {
     for (i = 0; i < MAX_BUGS; i++) {
         bugs[i].active = 0;
     }
-
     draw_background();
 }
 
-// --- UPDATE GAME LOGIC ---
-void update_game() {
+void update_game(void) {
     u16 value = JOY_readJoypad(JOY_1);
 
+    // D-Pad ile serbest uçuş
     if (value & BUTTON_UP)    { if (bee_y > 16)  bee_y -= 2; }
     if (value & BUTTON_DOWN)  { if (bee_y < 170) bee_y += 2; }
-    if (value & BUTTON_LEFT)  { if (bee_x > 8)   bee_x -= 2; }
-    if (value & BUTTON_RIGHT) { if (bee_x < 280) bee_x += 2; }
+    if (value & BUTTON_LEFT)  { if (bee_x > 16)  bee_x -= 2; }
+    if (value & BUTTON_RIGHT) { bee_x += 2; }
 
-    bee_x += 1;
-    if (bee_x > 300) bee_x = 20;
+    // Sonsuz koşu / ilerleme ve başa sarma döngüsü
+    if (bee_x > 300) {
+        bee_x = 30;
+        stage_loop++;
+        score += 100;
+    }
 
+    // Her 15 saniyede canın stacklenerek (+2) artması
+    timer_counter++;
+    if (timer_counter >= 900) {
+        timer_counter = 0;
+        bee_lives += 2;           
+        if (bee_lives > 9) bee_lives = 9; // Maksimum 9 can
+    }
+
+    // Yuvarlak çizgi film böceklerinin üretilmesi
     spawn_timer++;
-    if (spawn_timer > 60) {
+    if (spawn_timer > 50) {
         spawn_timer = 0;
         int i;
         for (i = 0; i < MAX_BUGS; i++) {
@@ -251,6 +262,7 @@ void update_game() {
         }
     }
 
+    // Böceklerin hareketleri ve çarpışma kontrolü
     int i;
     for (i = 0; i < MAX_BUGS; i++) {
         if (bugs[i].active) {
@@ -258,13 +270,15 @@ void update_game() {
 
             if (bugs[i].x < -16) {
                 bugs[i].active = 0;
-                score += 10;
+                score += 15;
             }
 
-            if (abs(bee_x - bugs[i].x) < 12 && abs(bee_y - bugs[i].y) < 12) {
+            int diff_x = bee_x - bugs[i].x; if (diff_x < 0) diff_x = -diff_x;
+            int diff_y = bee_y - bugs[i].y; if (diff_y < 0) diff_y = -diff_y;
+
+            if (diff_x < 12 && diff_y < 12) {
                 bee_lives--;
                 bugs[i].active = 0;
-                
                 if (bee_lives <= 0) {
                     current_state = STATE_GAME_OVER;
                 }
@@ -272,13 +286,7 @@ void update_game() {
         }
     }
 
-    timer_counter++;
-    if (timer_counter >= 900) {
-        timer_counter = 0;
-        bee_lives += 2;
-        if (bee_lives > 9) bee_lives = 9;
-    }
-
+    draw_background();
     VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL0, 0, 0, 0, 3), bee_x >> 3, bee_y >> 3);
 
     for (i = 0; i < MAX_BUGS; i++) {
@@ -287,16 +295,24 @@ void update_game() {
         }
     }
 
-    char buf[32];
-    if (current_lang == GAME_LANG_EN) {
-        sprintf(buf, "LIVES: %d  SCORE: %d", bee_lives, score);
-    } else {
-        sprintf(buf, "INCHI: %d  TENTOU: %d", bee_lives, score);
-    }
-    VDP_drawText(buf, 2, 2);
+    // Ekran paneli (SGDK intToDec)
+    VDP_drawText("LIV:", 2, 2);
+    VDP_drawText("SCR:", 12, 2);
+    VDP_drawText("LOP:", 24, 2);
+
+    char liv_str[4];
+    char scr_str[6];
+    char lop_str[4];
+
+    intToDec(bee_lives, liv_str, 1);
+    intToDec(score, scr_str, 4);
+    intToDec(stage_loop, lop_str, 1);
+
+    VDP_drawText(liv_str, 6, 2);
+    VDP_drawText(scr_str, 16, 2);
+    VDP_drawText(lop_str, 28, 2);
 }
 
-// --- MAIN ENTRY POINT ---
 int main(bool hardReset) {
     VDP_init();
     SPR_init();
@@ -311,14 +327,13 @@ int main(bool hardReset) {
         u16 value = JOY_readJoypad(JOY_1);
         u16 pressed = value & ~last_state_btn;
 
-        // Ekran sadece menü/durum değiştiğinde 1 kez çizilsin
         if (current_state != last_state) {
             if (current_state == STATE_MENU) show_menu();
             else if (current_state == STATE_SETTINGS) show_settings_menu();
             else if (current_state == STATE_PAUSED) show_pause_menu();
             else if (current_state == STATE_GAME_OVER) {
                 VDP_clearTextArea(0, 0, 40, 28);
-                if (current_lang == GAME_LANG_EN) {
+                if (current_lang == LANG_EN) {
                     VDP_drawText(" GAME OVER! ", 14, 10);
                     VDP_drawText("[A] RESTART GAME", 12, 14);
                     VDP_drawText("[B] MAIN MENU   ", 12, 16);
@@ -355,10 +370,10 @@ int main(bool hardReset) {
 
                 if (pressed & BUTTON_A) {
                     if (settings_selection == 0) {
-                        current_lang = (current_lang == GAME_LANG_EN) ? GAME_LANG_JP : GAME_LANG_EN;
+                        current_lang = (current_lang == LANG_EN) ? LANG_JP : LANG_EN;
                         show_settings_menu();
                     } else if (settings_selection == 1) {
-                        current_region = (current_region == GAME_REGION_WORLD) ? GAME_REGION_JAPAN : GAME_REGION_WORLD;
+                        current_region = (current_region == REG_WORLD) ? REG_JAPAN : REG_WORLD;
                         show_settings_menu();
                     } else {
                         current_state = STATE_MENU;
