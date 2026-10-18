@@ -32,17 +32,17 @@ static GameState last_state = (GameState)-1;
 
 // --- GAME VARIABLES ---
 static int bee_x = 40;
-static int bee_y = 100;
+static int bee_y = 90;
 static int bee_lives = 3;       // Başlangıçta 3 can
-static int score = 0;
-static int stage_loop = 1;
+static int score = 0;           // Sınırsız artan skor
+static int stage_loop = 0;      // 100 ekran döngü sayacı
 static u32 timer_counter = 0;   // 15 saniyede can artışı için sayaç
 static u16 spawn_timer = 0;
 static int pause_selection = 0;
 static int settings_selection = 0;
 
 // --- ENEMY BUG STRUCTURE ---
-#define MAX_BUGS 5
+#define MAX_BUGS 4
 typedef struct {
     int x, y;
     int active;
@@ -51,7 +51,9 @@ typedef struct {
 
 static Bug bugs[MAX_BUGS];
 
-// --- CARTOON GRAPHICS (Ellipse Bee & Cute Round Bug - Definitely NOT a snake!) ---
+// --- 3x3 DETAILED CARTOON GRAPHICS (Görseldeki oranlara tam uyumlu) ---
+static const u32 tile_sky[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+
 static const u32 tile_grass[8] = {
     0x33333333, 0x31133113, 0x11111111, 0x12211221,
     0x22222222, 0x22222222, 0x22222222, 0x22222222
@@ -62,33 +64,30 @@ static const u32 tile_dirt[8] = {
     0x44444444, 0x24222422, 0x22222222, 0x44444444
 };
 
-// Çizgi film Arı (Elips gövde, anten, göz, kanat, ayaklar)
-static const u32 tile_cartoon_bee[8] = {
-    0x0A000A00, 
-    0x3F33333F, 
-    0x31422413, 
-    0x12222221, 
-    0x12222221, 
-    0x31222213, 
-    0x03111130, 
-    0x0A0000A0  
+// 3x3 Büyük Arı Parçaları (9 Tiles: Index 3 to 11)
+static const u32 bee_t[9][8] = {
+    {0x0A000A00,0x3F33333F,0x31422413,0x12222221,0x12222221,0x31222213,0x03111130,0x0A0000A0},
+    {0x0A000A00,0x3F33333F,0x31422413,0x12222221,0x12222221,0x31222213,0x03111130,0x0A0000A0},
+    {0x0A000A00,0x3F33333F,0x31422413,0x12222221,0x12222221,0x31222213,0x03111130,0x0A0000A0},
+    {0x31422413,0x12222221,0x12222221,0x31222213,0x03111130,0x0A0000A0,0x00000000,0x00000000},
+    {0x31422413,0x12222221,0x12222221,0x31222213,0x03111130,0x0A0000A0,0x00000000,0x00000000},
+    {0x31422413,0x12222221,0x12222221,0x31222213,0x03111130,0x0A0000A0,0x00000000,0x00000000},
+    {0x3F33333F,0x31422413,0x12222221,0x12222221,0x31222213,0x03111130,0x0A0000A0,0x00000000},
+    {0x3F33333F,0x31422413,0x12222221,0x12222221,0x31222213,0x03111130,0x0A0000A0,0x00000000},
+    {0x3F33333F,0x31422413,0x12222221,0x12222221,0x31222213,0x03111130,0x0A0000A0,0x00000000}
 };
 
-// Sevimli Kahverengi Böcek (Yuvarlak/elips gövde, göz, anten, kanat, bacak - Asla yılan değil!)
-static const u32 tile_round_bug[8] = {
-    0x40022004, 
-    0x22444422, 
-    0x44333344, 
-    0x45444454, 
-    0x44444444, 
-    0x22444422, 
-    0x40022004, 
-    0x00000000  
-};
-
-static const u32 tile_flower[8] = {
-    0x00333000, 0x03777300, 0x37666730, 0x37616730,
-    0x37666730, 0x03777300, 0x00222000, 0x00222000
+// 3x3 Sevimli Kahverengi Böcek Parçaları (9 Tiles: Index 12 to 20 - Asla yılan değil!)
+static const u32 bug_t[9][8] = {
+    {0x40022004,0x22444422,0x44333344,0x45444454,0x44444444,0x22444422,0x40022004,0x00000000},
+    {0x40022004,0x22444422,0x44333344,0x45444454,0x44444444,0x22444422,0x40022004,0x00000000},
+    {0x40022004,0x22444422,0x44333344,0x45444454,0x44444444,0x22444422,0x40022004,0x00000000},
+    {0x44333344,0x45444454,0x44444444,0x22444422,0x40022004,0x00000000,0x00000000,0x00000000},
+    {0x44333344,0x45444454,0x44444444,0x22444422,0x40022004,0x00000000,0x00000000,0x00000000},
+    {0x44333344,0x45444454,0x44444444,0x22444422,0x40022004,0x00000000,0x00000000,0x00000000},
+    {0x22444422,0x44333344,0x45444454,0x44444444,0x22444422,0x40022004,0x00000000,0x00000000},
+    {0x22444422,0x44333344,0x45444454,0x44444444,0x22444422,0x40022004,0x00000000,0x00000000},
+    {0x22444422,0x44333344,0x45444454,0x44444444,0x22444422,0x40022004,0x00000000,0x00000000}
 };
 
 void init_palettes(void) {
@@ -97,24 +96,33 @@ void init_palettes(void) {
     PAL_setColor(2, RGB(1, 1, 1));       
     PAL_setColor(3, RGB(7, 7, 7));       
 
-    PAL_setColor(16 + 1, RGB(1, 5, 2));  
-    PAL_setColor(16 + 2, RGB(4, 0, 1));  
-    PAL_setColor(16 + 3, RGB(4, 2, 0));  // Kahverengi Böcek Rengi
+    PAL_setColor(16 + 1, RGB(1, 5, 2));  // Çim yeşili
+    PAL_setColor(16 + 2, RGB(4, 0, 1));  // Toprak kahvesi
+    PAL_setColor(16 + 3, RGB(4, 2, 0));  // Böcek rengi
     PAL_setColor(16 + 4, RGB(7, 0, 0));  
 }
 
 void load_graphics(void) {
+    VDP_loadTileData(tile_sky, 0, 1, DMA);
     VDP_loadTileData(tile_grass, 1, 1, DMA);
     VDP_loadTileData(tile_dirt, 2, 1, DMA);
-    VDP_loadTileData(tile_cartoon_bee, 3, 1, DMA);
-    VDP_loadTileData(tile_round_bug, 4, 1, DMA);
-    VDP_loadTileData(tile_flower, 5, 1, DMA);
+    
+    int i;
+    for (i = 0; i < 9; i++) {
+        VDP_loadTileData(bee_t[i], 3 + i, 1, DMA);
+    }
+    for (i = 0; i < 9; i++) {
+        VDP_loadTileData(bug_t[i], 12 + i, 1, DMA);
+    }
 }
 
 void draw_background(void) {
     VDP_clearTextArea(0, 0, 40, 28);
     int x, y;
     for (x = 0; x < 40; x++) {
+        for (y = 0; y < 23; y++) {
+            VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL0, 0, 0, 0, 0), x, y);
+        }
         VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL0, 0, 0, 0, 1), x, 23);
         VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL0, 0, 0, 0, 1), x, 24);
         for (y = 25; y < 28; y++) {
@@ -125,23 +133,17 @@ void draw_background(void) {
 
 void show_menu(void) {
     VDP_clearTextArea(0, 0, 40, 28);
-    int i;
-    for (i = 2; i < 38; i += 6) {
-        VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL1, 0, 0, 0, 5), i, 21);
-    }
-
     if (current_lang == LANG_EN) {
         VDP_drawText("BEE GOLD COLLECTOR", 10, 5);
-        VDP_drawText("ENDLESS FLIGHT RUN", 10, 7);
+        VDP_drawText("100 SCREENS ENDLESS RUN", 9, 7);
         VDP_drawText("PRESS [A] TO PLAY", 11, 15);
         VDP_drawText("PRESS [B] FOR SETTINGS", 10, 17);
     } else {
         VDP_drawText("HATI KOGANE COLLECTOR", 9, 5);
-        VDP_drawText("MUGEN FLIGHT BAN", 11, 7);
+        VDP_drawText("100 SCREEN MUGEN BAN", 10, 7);
         VDP_drawText("[A] BUTTON DE KAISHI", 10, 15);
         VDP_drawText("[B] BUTTON DE SETTEI", 10, 17);
     }
-    VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL0, 0, 0, 0, 3), 18, 11);
 }
 
 void show_settings_menu(void) {
@@ -207,10 +209,10 @@ void show_pause_menu(void) {
 
 void reset_game(void) {
     bee_x = 40;
-    bee_y = 100;
+    bee_y = 90;
     bee_lives = 3;              
     score = 0;
-    stage_loop = 1;
+    stage_loop = 0;             
     timer_counter = 0;          
     spawn_timer = 0;
     pause_selection = 0;
@@ -225,58 +227,59 @@ void reset_game(void) {
 void update_game(void) {
     u16 value = JOY_readJoypad(JOY_1);
 
-    // D-Pad ile serbest uçuş
-    if (value & BUTTON_UP)    { if (bee_y > 16)  bee_y -= 2; }
-    if (value & BUTTON_DOWN)  { if (bee_y < 170) bee_y += 2; }
-    if (value & BUTTON_LEFT)  { if (bee_x > 16)  bee_x -= 2; }
-    if (value & BUTTON_RIGHT) { bee_x += 2; }
+    bee_x += 2;
 
-    // Sonsuz koşu / ilerleme ve başa sarma döngüsü
-    if (bee_x > 300) {
-        bee_x = 30;
+    if (value & BUTTON_UP)    { if (bee_y > 16)  bee_y -= 2; }
+    if (value & BUTTON_DOWN)  { if (bee_y < 155) bee_y += 2; }
+    if (value & BUTTON_LEFT)  { if (bee_x > 24)  bee_x -= 3; }
+    if (value & BUTTON_RIGHT) { bee_x += 3; }
+
+    if (bee_x > 32000) {
+        bee_x = 40;
         stage_loop++;
-        score += 100;
+        if (stage_loop >= 100) {
+            stage_loop = 0; 
+        }
     }
 
-    // Her 15 saniyede canın stacklenerek (+2) artması
+    score += 1;
+
     timer_counter++;
     if (timer_counter >= 900) {
         timer_counter = 0;
         bee_lives += 2;           
-        if (bee_lives > 9) bee_lives = 9; // Maksimum 9 can
+        if (bee_lives > 9) bee_lives = 9; 
     }
 
-    // Yuvarlak çizgi film böceklerinin üretilmesi
     spawn_timer++;
-    if (spawn_timer > 50) {
+    if (spawn_timer == 45) {
         spawn_timer = 0;
         int i;
         for (i = 0; i < MAX_BUGS; i++) {
             if (!bugs[i].active) {
                 bugs[i].active = 1;
                 bugs[i].x = 320;
-                bugs[i].y = 30 + (random() % 120);
+                bugs[i].y = 20 + (random() % 115);
                 bugs[i].speed = 1 + (random() % 2);
                 break;
             }
         }
     }
 
-    // Böceklerin hareketleri ve çarpışma kontrolü
     int i;
     for (i = 0; i < MAX_BUGS; i++) {
         if (bugs[i].active) {
             bugs[i].x -= bugs[i].speed;
 
-            if (bugs[i].x < -16) {
+            if (bugs[i].x < -24) {
                 bugs[i].active = 0;
-                score += 15;
+                score += 50; 
             }
 
-            int diff_x = bee_x - bugs[i].x; if (diff_x < 0) diff_x = -diff_x;
+            int diff_x = (bee_x % 320) - bugs[i].x; if (diff_x < 0) diff_x = -diff_x;
             int diff_y = bee_y - bugs[i].y; if (diff_y < 0) diff_y = -diff_y;
 
-            if (diff_x < 12 && diff_y < 12) {
+            if (diff_x < 22 && diff_y < 22) {
                 bee_lives--;
                 bugs[i].active = 0;
                 if (bee_lives <= 0) {
@@ -287,31 +290,47 @@ void update_game(void) {
     }
 
     draw_background();
-    VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL0, 0, 0, 0, 3), bee_x >> 3, bee_y >> 3);
 
-    for (i = 0; i < MAX_BUGS; i++) {
-        if (bugs[i].active) {
-            VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL1, 0, 0, 0, 4), bugs[i].x >> 3, bugs[i].y >> 3);
+    int bx = (bee_x % 320) >> 3;
+    int by = bee_y >> 3;
+    int t_idx = 3;
+    int row, col;
+    for (row = 0; row < 3; row++) {
+        for (col = 0; col < 3; col++) {
+            VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL0, 0, 0, 0, t_idx), bx + col, by + row);
+            t_idx++;
         }
     }
 
-        // Ekran paneli (SGDK intToStr)
+    for (i = 0; i < MAX_BUGS; i++) {
+        if (bugs[i].active) {
+            int bug_bx = bugs[i].x >> 3;
+            int bug_by = bugs[i].y >> 3;
+            int bug_t_idx = 12;
+            for (row = 0; row < 3; row++) {
+                for (col = 0; col < 3; col++) {
+                    VDP_setTileMapXY(BG_A, TILE_ATTR_FULL(PAL1, 0, 0, 0, bug_t_idx), bug_bx + col, bug_by + row);
+                    bug_t_idx++;
+                }
+            }
+        }
+    }
+
     VDP_drawText("LIV:", 2, 2);
     VDP_drawText("SCR:", 12, 2);
-    VDP_drawText("LOP:", 24, 2);
+    VDP_drawText("L100:", 23, 2);
 
     char liv_str[4];
     char scr_str[6];
     char lop_str[4];
 
-    // İŞTE BU SATIRLAR:
     intToStr(bee_lives, liv_str, 1);
-    intToStr(score, scr_str, 4);
-    intToStr(stage_loop, lop_str, 1);
+    intToStr(score, scr_str, 5);
+    intToStr(stage_loop, lop_str, 3);
 
     VDP_drawText(liv_str, 6, 2);
     VDP_drawText(scr_str, 16, 2);
-    VDP_drawText(lop_str, 28, 2);
+    VDP_drawText(lop_str, 29, 2);
 }
 
 int main(bool hardReset) {
@@ -321,6 +340,7 @@ int main(bool hardReset) {
     
     init_palettes();
     load_graphics();
+    draw_background();
 
     u16 last_state_btn = 0;
 
@@ -329,9 +349,17 @@ int main(bool hardReset) {
         u16 pressed = value & ~last_state_btn;
 
         if (current_state != last_state) {
-            if (current_state == STATE_MENU) show_menu();
-            else if (current_state == STATE_SETTINGS) show_settings_menu();
-            else if (current_state == STATE_PAUSED) show_pause_menu();
+            if (current_state == STATE_MENU) {
+                draw_background();
+                show_menu();
+            }
+            else if (current_state == STATE_SETTINGS) {
+                draw_background();
+                show_settings_menu();
+            }
+            else if (current_state == STATE_PAUSED) {
+                show_pause_menu();
+            }
             else if (current_state == STATE_GAME_OVER) {
                 VDP_clearTextArea(0, 0, 40, 28);
                 if (current_lang == LANG_EN) {
